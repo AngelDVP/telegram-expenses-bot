@@ -42,7 +42,9 @@ def format_money(val):
     return f"${int(round(val)):,}".replace(",", ".")
 
 @bot.message_handler(commands=['start', 'help', 'ayuda'])
+@bot.message_handler(func=lambda msg: msg.text and msg.text.strip().lower() in ['ayuda', '/ayuda', 'help', '/help'])
 def send_welcome(message):
+
     welcome_text = (
         "👋 *¡Hola! Soy tu Asistente de Gastos Compartidos con Angela.*\n\n"
         "Puedo registrar tus compras, abonos y calcular cuánto te debe Angela en tiempo real.\n\n"
