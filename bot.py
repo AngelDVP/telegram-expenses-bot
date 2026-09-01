@@ -249,6 +249,9 @@ def set_initial_balance(message):
 
 @bot.message_handler(func=lambda msg: True)
 def process_text_message(message):
+    if not message.text:
+        return
+
     text = message.text.strip().lower()
     user_id = message.from_user.id
     owner_id = ensure_owner(user_id)
@@ -294,7 +297,10 @@ def process_text_message(message):
             bot.send_message(message.chat.id, f"🟢 *Gasto registrado:* '{clean_desc.capitalize()}' por `{format_money(amount)}`{pct_str}.\n💡 *Angela aporta:* `{format_money(tx['debt_amount'])}`.\n\n💰 *Nuevo saldo que Angela te debe:* `{format_money(b['total_debt'])}`")
         return
 
-    bot.send_message(message.chat.id, "💡 *No entendí la cifra.* Para registrar un gasto escribe el nombre y el monto (ejemplo: `super 45000` o `abono 20000`).\n\nUsa /ayua para ver las instrucciones.")
+    # If in private chat and didn't understand number, send help line
+    if message.chat.type == 'private':
+        bot.send_message(message.chat.id, "💡 *No entendí la cifra.* Para registrar un gasto escribe el nombre y el monto (ejemplo: `super 45000` o `abono 20000`).\n\nUsa /ayua para ver las instrucciones.")
+
 
 if __name__ == '__main__':
     print("Bot de Cuentas Iniciado y Escuchando en Telegram...")
