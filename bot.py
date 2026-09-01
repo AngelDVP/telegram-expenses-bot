@@ -41,18 +41,24 @@ threading.Thread(target=start_health_server, daemon=True).start()
 def format_money(val):
     return f"${int(round(val)):,}".replace(",", ".")
 
+def ensure_owner(user_id):
+    owner = db.get_setting('owner_id')
+    if not owner:
+        db.set_setting('owner_id', user_id)
+        return user_id
+    return int(owner)
+
 @bot.message_handler(commands=['start', 'help', 'ayuda'])
 @bot.message_handler(func=lambda msg: msg.text and msg.text.strip().lower() in ['ayuda', '/ayuda', 'help', '/help'])
 def send_welcome(message):
-
+    ensure_owner(message.from_user.id)
     welcome_text = (
         "👋 *¡Hola! Soy tu Asistente de Gastos Compartidos con Angela.*\n\n"
-        "Puedo registrar tus compras, abonos y calcular cuánto te debe Angela en tiempo real.\n\n"
-        "📌 *¿Cómo registrar un gasto (que pagaste tú)?*\n"
+        "Identifico automáticamente quién escribe en el chat para registrar el gasto correctamente.\n\n"
+        "📌 *¿Cómo registrar un gasto?*\n"
         "• Escribe el concepto y el monto: `super 45000` o `luz 30000` (por defecto 50%).\n"
-        "• Si es 100% de Angela: `plancha 40000 100%` o `pantalon 25000 100`.\n\n"
-        "📌 *¿Cómo registrar algo que pagó Angela?*\n"
-        "• Escribe `ange` antes del concepto: `ange sushi 17000` o `ange churrasco 14500`.\n\n"
+        "• El bot detecta si escribes tú o Angela y asigna a quién le corresponde.\n"
+        "• Si es 100% de la otra persona: `plancha 40000 100%`.\n\n"
         "📌 *¿Cómo registrar un abono / transferencia?*\n"
         "• Escribe: `abono 50000` o `me pagó 30000`.\n\n"
         "⚙️ *Comandos disponibles:*\n"
@@ -67,9 +73,9 @@ def send_welcome(message):
     )
     bot.send_message(message.chat.id, welcome_text)
 
-
 @bot.message_handler(commands=['balance', 'saldo'])
 def show_balance(message):
+    ensure_owner(message.from_user.id)
     b = db.get_balance()
     total = b['total_debt']
     
@@ -91,6 +97,7 @@ def show_balance(message):
 
 @bot.message_handler(commands=['historial'])
 def show_history(message):
+    ensure_owner(message.from_user.id)
     txs = db.get_recent_transactions(10)
     if not txs:
         bot.send_message(message.chat.id, "📜 No hay movimientos registrados aún.")
@@ -118,9 +125,9 @@ def show_history(message):
 
 @bot.message_handler(commands=['borrar', 'undo'])
 def delete_handler(message):
+    ensure_owner(message.from_user.id)
     parts = message.text.split()
     
-    # If used without arguments: delete last transaction
     if len(parts) == 1:
         deleted = db.delete_last_transaction()
         if deleted:
@@ -130,7 +137,6 @@ def delete_handler(message):
             bot.send_message(message.chat.id, "❌ No hay transacciones para borrar.")
         return
 
-    # If used with ID: /borrar 5
     if len(parts) >= 2 and parts[1].isdigit():
         t_id = int(parts[1])
         deleted = db.delete_transaction(t_id)
@@ -144,11 +150,13 @@ def delete_handler(message):
 
 @bot.message_handler(commands=['reiniciar', 'reset'])
 def reset_handler(message):
+    ensure_owner(message.from_user.id)
     db.reset_all_data()
     bot.send_message(message.chat.id, "🧹 *¡Todos los datos han sido reiniciados a $0 con éxito!* La cuenta está limpia para comenzar de nuevo.")
 
 @bot.message_handler(commands=['excel', 'exportar', 'csv'])
 def export_excel_handler(message):
+    ensure_owner(message.from_user.id)
     filepath = db.export_to_csv()
     if os.path.exists(filepath):
         bot.send_message(message.chat.id, "📊 *Aquí tienes la planilla Excel con todos los movimientos ordenados:*")
@@ -159,6 +167,7 @@ def export_excel_handler(message):
 
 @bot.message_handler(commands=['saldo_inicial'])
 def set_initial_balance(message):
+    ensure_owner(message.from_user.id)
     text = message.text.replace('/saldo_inicial', '').strip()
     match = re.search(r'\d+', text.replace('.', '').replace('$', ''))
     if match:
@@ -171,6 +180,7 @@ def set_initial_balance(message):
 
 @bot.message_handler(commands=['wsp', 'whatsapp'])
 def send_whatsapp_summary(message):
+    ensure_owner(message.from_user.id)
     b = db.get_balance()
     total = b['total_debt']
     
@@ -194,6 +204,10 @@ def send_whatsapp_summary(message):
 @bot.message_handler(func=lambda msg: True)
 def process_text_message(message):
     text = message.text.strip().lower()
+    user_id = message.from_user.id
+    owner_id = ensure_owner(user_id)
+    
+    is_owner = (user_id == owner_id)
     
     if text.startswith('/'):
         return
@@ -204,42 +218,37 @@ def process_text_message(message):
         if match:
             raw_amt = match.group(1).replace('.', '').replace(',', '')
             amount = float(raw_amt)
-            tx = db.add_transaction("Abono de Angela", amount, pct=1.0, trans_type='abono', user_id=message.from_user.id)
+            tx = db.add_transaction("Abono de Angela", amount, pct=1.0, trans_type='abono', user_id=user_id)
             b = db.get_balance()
             bot.send_message(message.chat.id, f"💵 *Abono registrado:* `{format_money(amount)}`.\n\n💰 *Nuevo saldo que Angela te debe:* `{format_money(b['total_debt'])}`")
             return
 
-    # Check for Angela paid ('ange')
-    if text.startswith('ange') or text.startswith('angela'):
-        clean_text = text.replace('ange', '').replace('angela', '').strip()
-        match = re.search(r'(\d[\d\.\,]*)', clean_text)
-        if match:
-            raw_amt = match.group(1).replace('.', '').replace(',', '')
-            amount = float(raw_amt)
-            desc = clean_text.replace(match.group(1), '').strip() or "Compra Angela"
-            pct = 1.0 if ('100' in clean_text) else 0.5
-            
-            tx = db.add_transaction(desc.capitalize(), amount, pct=pct, trans_type='gasto_angela', user_id=message.from_user.id)
-            b = db.get_balance()
-            pct_str = " (100% tu deuda)" if pct == 1.0 else " (50% tu parte)"
-            bot.send_message(message.chat.id, f"🔴 *Gasto de Angela registrado:* '{desc.capitalize()}' por `{format_money(amount)}`{pct_str}.\n\n💰 *Nuevo saldo que Angela te debe:* `{format_money(b['total_debt'])}`")
-            return
-
-    # Normal expense paid by user
+    # Force Angela paid if explicitly specified by keyword 'ange' or 'angela'
+    explicit_angela = text.startswith('ange') or text.startswith('angela')
+    
+    # Check for numbers
     match = re.search(r'(\d[\d\.\,]*)', text)
     if match:
         raw_amt = match.group(1).replace('.', '').replace(',', '')
         amount = float(raw_amt)
-        desc = text.replace(match.group(1), '').replace('100%', '').replace('100', '').strip() or "Gasto variado"
+        clean_desc = text.replace('ange', '').replace('angela', '').replace(match.group(1), '').replace('100%', '').replace('100', '').strip() or "Gasto variado"
         pct = 1.0 if ('100%' in text or ' 100' in text or text.endswith('100')) else 0.5
         
-        tx = db.add_transaction(desc.capitalize(), amount, pct=pct, trans_type='gasto', user_id=message.from_user.id)
-        b = db.get_balance()
-        pct_str = " (100% Angela)" if pct == 1.0 else " (50% Angela)"
-        bot.send_message(message.chat.id, f"🟢 *Gasto registrado:* '{desc.capitalize()}' por `{format_money(amount)}`{pct_str}.\n💡 *Angela aporta:* `{format_money(tx['debt_amount'])}`.\n\n💰 *Nuevo saldo que Angela te debe:* `{format_money(b['total_debt'])}`")
+        # If message is NOT from owner OR explicitly starts with 'ange' -> Paid by Angela
+        if not is_owner or explicit_angela:
+            tx = db.add_transaction(clean_desc.capitalize(), amount, pct=pct, trans_type='gasto_angela', user_id=user_id)
+            b = db.get_balance()
+            pct_str = " (100% tu deuda)" if pct == 1.0 else " (50% tu parte)"
+            bot.send_message(message.chat.id, f"🔴 *Gasto de Angela registrado:* '{clean_desc.capitalize()}' por `{format_money(amount)}`{pct_str}.\n\n💰 *Nuevo saldo que Angela te debe:* `{format_money(b['total_debt'])}`")
+        else:
+            # Paid by Owner (Angel)
+            tx = db.add_transaction(clean_desc.capitalize(), amount, pct=pct, trans_type='gasto', user_id=user_id)
+            b = db.get_balance()
+            pct_str = " (100% Angela)" if pct == 1.0 else " (50% Angela)"
+            bot.send_message(message.chat.id, f"🟢 *Gasto registrado:* '{clean_desc.capitalize()}' por `{format_money(amount)}`{pct_str}.\n💡 *Angela aporta:* `{format_money(tx['debt_amount'])}`.\n\n💰 *Nuevo saldo que Angela te debe:* `{format_money(b['total_debt'])}`")
         return
 
-    bot.send_message(message.chat.id, "💡 *No entendí la cifra.* Para registrar un gasto escribe el nombre y el monto (ejemplo: `super 45000` o `abono 20000`).\n\nUsa /help para ver las instrucciones.")
+    bot.send_message(message.chat.id, "💡 *No entendí la cifra.* Para registrar un gasto escribe el nombre y el monto (ejemplo: `super 45000` o `abono 20000`).\n\nUsa /ayuda para ver las instrucciones.")
 
 if __name__ == '__main__':
     print("Bot de Cuentas Iniciado y Escuchando en Telegram...")

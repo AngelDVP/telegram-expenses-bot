@@ -26,9 +26,33 @@ def init_db():
             user_id INTEGER
         )
     ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    ''')
     
     conn.commit()
     conn.close()
+
+def set_setting(key, value):
+    init_db()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', (key, str(value)))
+    conn.commit()
+    conn.close()
+
+def get_setting(key):
+    init_db()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+    row = cursor.fetchone()
+    conn.close()
+    return row['value'] if row else None
 
 def format_money(amount):
     return f"${int(round(amount)):,}".replace(",", ".")
