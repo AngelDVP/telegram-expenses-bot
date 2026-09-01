@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import csv
 from datetime import datetime
 
 DB_PATH = os.path.join(os.path.dirname(__file__), 'expenses.db')
@@ -13,7 +14,6 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # Table for transactions
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,12 +39,6 @@ def add_transaction(description, amount, pct=0.5, trans_type='gasto', user_id=No
     cursor = conn.cursor()
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # debt_amount is how much this transaction changes Angela's debt to user
-    # 'gasto': paid by user for shared/Angela -> Angela owes +(amount * pct)
-    # 'gasto_angela': paid by Angela for shared/user -> user owes Angela, so Angela's debt to user decreases by -(amount * pct)
-    # 'abono': Angela pays user -> Angela's debt to user decreases by -amount
-    # 'saldo_inicial': sets or adds initial debt balance
     
     if trans_type == 'gasto':
         debt_amount = amount * pct
@@ -117,6 +111,17 @@ def get_recent_transactions(limit=10):
     
     return [dict(row) for row in rows]
 
+def get_all_transactions():
+    init_db()
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM transactions ORDER BY id ASC')
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return [dict(row) for row in rows]
+
 def delete_transaction(trans_id):
     init_db()
     conn = get_connection()
@@ -148,6 +153,46 @@ def delete_last_transaction():
     conn.commit()
     conn.close()
     return dict(row)
+
+def reset_all_data():
+    init_db()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM transactions')
+    cursor.execute('DELETE FROM sqlite_sequence WHERE name="transactions"')
+    conn.commit()
+    conn.close()
+
+def export_to_csv():
+    txs = get_all_transactions()
+    filepath = os.path.join(os.path.dirname(__file__), 'Reporte_Gastos_Angela.csv')
+    
+    with open(filepath, 'w', newline='', encoding='utf-8-sig') as f:
+        writer = csv.writer(f, delimiter=';')
+        writer.writerow(['ID', 'Fecha y Hora', 'Concepto', 'Monto Pagado', 'Porcentaje Angela', 'Monto Deuda Angela', 'Tipo de Registro'])
+        
+        for t in txs:
+            t_type = t['type']
+            if t_type == 'gasto':
+                tag = "Pagado por ti"
+            elif t_type == 'gasto_angela':
+                tag = "Pagado por Angela"
+            elif t_type == 'abono':
+                tag = "Abono / Transferencia Angela"
+            else:
+                tag = "Saldo Inicial"
+                
+            writer.writerow([
+                t['id'],
+                t['timestamp'],
+                t['description'],
+                int(round(t['amount'])),
+                f"{int(t['pct']*100)}%",
+                int(round(t['debt_amount'])),
+                tag
+            ])
+            
+    return filepath
 
 if __name__ == '__main__':
     init_db()

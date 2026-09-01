@@ -57,7 +57,9 @@ def send_welcome(message):
         "• /balance o /saldo - Ver cuánto te debe Angela hoy.\n"
         "• /historial - Lista de los últimos movimientos.\n"
         "• /wsp - Genera el mensaje listo para copiar a WhatsApp.\n"
-        "• /undo - Borrar el último gasto o abono registrado.\n"
+        "• /excel - Exporta y descarga un archivo Excel (CSV) con todos los gastos registrados.\n"
+        "• /borrar - Borra el último movimiento (o `/borrar 5` para borrar un ID específico).\n"
+        "• /reiniciar - Borra todos los datos cargados y reinicia la cuenta a $0.\n"
         "• /saldo_inicial - Configurar el saldo inicial acumulado (ejemplo: `/saldo_inicial 659308`)."
     )
     bot.send_message(message.chat.id, welcome_text)
@@ -107,32 +109,49 @@ def show_history(message):
             
         lines.append(f"• *#{t_id}* | {tag}: *{t['description']}* - `{format_money(t['amount'])}`{pct_str} -> Impacto saldo: `{format_money(t['debt_amount'])}`")
     
-    lines.append("\n💡 _Para borrar una transacción usa: `/borrar ID` (ejemplo: `/borrar 5`)_")
+    lines.append("\n💡 _Para borrar el último gasto escribe `/borrar` (o `/borrar ID` para uno específico)_")
     bot.send_message(message.chat.id, "\n".join(lines))
 
-@bot.message_handler(commands=['undo'])
-def undo_last(message):
-    deleted = db.delete_last_transaction()
-    if deleted:
-        b = db.get_balance()
-        bot.send_message(message.chat.id, f"🗑️ *Transacción #{deleted['id']} borrada:* '{deleted['description']}' por `{format_money(deleted['amount'])}`.\n\n💰 *Nuevo saldo:* `{format_money(b['total_debt'])}`")
-    else:
-        bot.send_message(message.chat.id, "❌ No hay transacciones para borrar.")
-
-@bot.message_handler(commands=['borrar'])
-def delete_by_id(message):
+@bot.message_handler(commands=['borrar', 'undo'])
+def delete_handler(message):
     parts = message.text.split()
-    if len(parts) < 2 or not parts[1].isdigit():
-        bot.send_message(message.chat.id, "⚠️ Uso correcto: `/borrar ID` (ejemplo: `/borrar 4`)")
-        return
     
-    t_id = int(parts[1])
-    deleted = db.delete_transaction(t_id)
-    if deleted:
-        b = db.get_balance()
-        bot.send_message(message.chat.id, f"🗑️ *Transacción #{deleted['id']} borrada:* '{deleted['description']}'.\n\n💰 *Nuevo saldo:* `{format_money(b['total_debt'])}`")
+    # If used without arguments: delete last transaction
+    if len(parts) == 1:
+        deleted = db.delete_last_transaction()
+        if deleted:
+            b = db.get_balance()
+            bot.send_message(message.chat.id, f"🗑️ *Última transacción (#{deleted['id']}) borrada:* '{deleted['description']}' por `{format_money(deleted['amount'])}`.\n\n💰 *Nuevo saldo:* `{format_money(b['total_debt'])}`")
+        else:
+            bot.send_message(message.chat.id, "❌ No hay transacciones para borrar.")
+        return
+
+    # If used with ID: /borrar 5
+    if len(parts) >= 2 and parts[1].isdigit():
+        t_id = int(parts[1])
+        deleted = db.delete_transaction(t_id)
+        if deleted:
+            b = db.get_balance()
+            bot.send_message(message.chat.id, f"🗑️ *Transacción #{deleted['id']} borrada:* '{deleted['description']}'.\n\n💰 *Nuevo saldo:* `{format_money(b['total_debt'])}`")
+        else:
+            bot.send_message(message.chat.id, f"❌ No se encontró ninguna transacción con el ID #{t_id}.")
     else:
-        bot.send_message(message.chat.id, f"❌ No se encontró ninguna transacción con el ID #{t_id}.")
+        bot.send_message(message.chat.id, "⚠️ Usa `/borrar` para borrar el último registro, o `/borrar ID` (ejemplo: `/borrar 5`).")
+
+@bot.message_handler(commands=['reiniciar', 'reset'])
+def reset_handler(message):
+    db.reset_all_data()
+    bot.send_message(message.chat.id, "🧹 *¡Todos los datos han sido reiniciados a $0 con éxito!* La cuenta está limpia para comenzar de nuevo.")
+
+@bot.message_handler(commands=['excel', 'exportar', 'csv'])
+def export_excel_handler(message):
+    filepath = db.export_to_csv()
+    if os.path.exists(filepath):
+        bot.send_message(message.chat.id, "📊 *Aquí tienes la planilla Excel con todos los movimientos ordenados:*")
+        with open(filepath, 'rb') as f:
+            bot.send_document(message.chat.id, f)
+    else:
+        bot.send_message(message.chat.id, "❌ No hay datos para exportar.")
 
 @bot.message_handler(commands=['saldo_inicial'])
 def set_initial_balance(message):
@@ -167,7 +186,6 @@ def send_whatsapp_summary(message):
 
     msg = f"```\n{wsp_text}\n```"
     bot.send_message(message.chat.id, msg)
-
 
 @bot.message_handler(func=lambda msg: True)
 def process_text_message(message):
