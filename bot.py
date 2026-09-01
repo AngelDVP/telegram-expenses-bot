@@ -41,7 +41,7 @@ threading.Thread(target=start_health_server, daemon=True).start()
 def format_money(val):
     return f"${int(round(val)):,}".replace(",", ".")
 
-@bot.message_handler(commands=['start', 'help'])
+@bot.message_handler(commands=['start', 'help', 'ayuda'])
 def send_welcome(message):
     welcome_text = (
         "👋 *¡Hola! Soy tu Asistente de Gastos Compartidos con Angela.*\n\n"
@@ -53,16 +53,18 @@ def send_welcome(message):
         "• Escribe `ange` antes del concepto: `ange sushi 17000` o `ange churrasco 14500`.\n\n"
         "📌 *¿Cómo registrar un abono / transferencia?*\n"
         "• Escribe: `abono 50000` o `me pagó 30000`.\n\n"
-        "⚙️ *Comandos útiles:*\n"
-        "• /balance o /saldo - Ver cuánto te debe Angela hoy.\n"
-        "• /historial - Lista de los últimos movimientos.\n"
-        "• /wsp - Genera el mensaje listo para copiar a WhatsApp.\n"
-        "• /excel - Exporta y descarga un archivo Excel (CSV) con todos los gastos registrados.\n"
-        "• /borrar - Borra el último movimiento (o `/borrar 5` para borrar un ID específico).\n"
-        "• /reiniciar - Borra todos los datos cargados y reinicia la cuenta a $0.\n"
-        "• /saldo_inicial - Configurar el saldo inicial acumulado (ejemplo: `/saldo_inicial 659308`)."
+        "⚙️ *Comandos disponibles:*\n"
+        "• /saldo (o /balance) - Ver el saldo acumulado en tiempo real.\n"
+        "• /historial - Lista los últimos movimientos.\n"
+        "• /wsp - Genera el texto limpio para copiar y enviar por WhatsApp.\n"
+        "• /excel - Exporta y descarga el reporte en formato Excel/CSV.\n"
+        "• /borrar - Elimina el último movimiento (o `/borrar ID` para uno específico).\n"
+        "• /reiniciar - Borra todas las transacciones y vuelve la cuenta a $0.\n"
+        "• /saldo_inicial - Ajusta el saldo inicial acumulado (ejemplo: `/saldo_inicial 659308`).\n"
+        "• /ayuda - Muestra este menú de instrucciones."
     )
     bot.send_message(message.chat.id, welcome_text)
+
 
 @bot.message_handler(commands=['balance', 'saldo'])
 def show_balance(message):
