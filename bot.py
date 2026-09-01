@@ -165,8 +165,9 @@ def send_whatsapp_summary(message):
             f"👉 Saldo a tu favor: {format_money(abs(total))}"
         )
 
-    msg = f"📱 *MENSAJE LISTO PARA WHATSAPP:*\n\n```\n{wsp_text}\n```\n\n_Copia el texto dentro de la caja y envíaselo por WhatsApp._"
+    msg = f"```\n{wsp_text}\n```"
     bot.send_message(message.chat.id, msg)
+
 
 @bot.message_handler(func=lambda msg: True)
 def process_text_message(message):
