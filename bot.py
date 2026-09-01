@@ -67,7 +67,9 @@ def send_welcome(message):
         "• /wsp - Genera el texto limpio para copiar y enviar por WhatsApp.\n"
         "• /excel - Exporta y descarga el reporte en formato Excel/CSV.\n"
         "• /borrar - Elimina el último movimiento (o `/borrar ID` para uno específico).\n"
+        "• /limpiar - Limpia la pantalla borrando los últimos mensajes del chat.\n"
         "• /reiniciar - Borra todas las transacciones y vuelve la cuenta a $0.\n"
+
         "• /saldo_inicial - Ajusta el saldo inicial acumulado (ejemplo: `/saldo_inicial 659308`).\n"
         "• /ayuda - Muestra este menú de instrucciones."
     )
@@ -148,8 +150,26 @@ def delete_handler(message):
     else:
         bot.send_message(message.chat.id, "⚠️ Usa `/borrar` para borrar el último registro, o `/borrar ID` (ejemplo: `/borrar 5`).")
 
+@bot.message_handler(commands=['limpiar_chat', 'limpiar'])
+def clear_chat_history(message):
+    ensure_owner(message.from_user.id)
+    chat_id = message.chat.id
+    current_msg_id = message.message_id
+    
+    # Attempt to delete recent messages
+    deleted_count = 0
+    for msg_id in range(current_msg_id, max(1, current_msg_id - 100), -1):
+        try:
+            bot.delete_message(chat_id, msg_id)
+            deleted_count += 1
+        except Exception:
+            pass
+            
+    bot.send_message(chat_id, "✨ *Historial del chat limpiado.*")
+
 @bot.message_handler(commands=['reiniciar', 'reset'])
 def reset_handler(message):
+
     ensure_owner(message.from_user.id)
     db.reset_all_data()
     bot.send_message(message.chat.id, "🧹 *¡Todos los datos han sido reiniciados a $0 con éxito!* La cuenta está limpia para comenzar de nuevo.")
