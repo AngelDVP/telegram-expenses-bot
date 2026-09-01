@@ -92,24 +92,25 @@ def send_welcome(message):
 @bot.message_handler(commands=['balance', 'saldo'])
 def show_balance(message):
     ensure_owner(message.from_user.id)
-    b = db.get_balance()
-    total = b['total_debt']
+    d = db.get_detailed_balance()
     
-    if total >= 0:
-        status_line = f"💰 *Angela te debe actualmente:* `{format_money(total)}`"
-    else:
-        status_line = f"🔴 *Tú le debes a Angela:* `{format_money(abs(total))}`"
+    tot_angel_val = abs(d['total_angel_num'])
+    tag_angel = "abono" if d['total_angel_num'] >= 0 else "deuda"
+    
+    tot_angela_val = abs(d['total_angela_num'])
+    tag_angela = "abono" if d['total_angela_num'] >= 0 else "deuda"
 
     msg = (
-        "📊 *RESUMEN DE CUENTAS ACTUAL*\n"
-        "────────────────────\n"
-        f"{status_line}\n"
-        "────────────────────\n"
-        f"• Deuda acumulada por tus compras: `{format_money(b['total_gastos_deuda'])}`\n"
-        f"• Deuda tuya por compras de Angela: `{format_money(b['total_angela_deuda'])}`\n"
-        f"• Abonos recibidos de Angela: `{format_money(b['total_abonos'])}`"
+        f"🔴 Deuda Angel: {format_money(d['deuda_angel'])}\n"
+        f"🟢 Abonos Angel: {format_money(d['abonos_angel'])}\n"
+        f"Total: {format_money(tot_angel_val)} {tag_angel}\n"
+        "----------------------------\n"
+        f"🔴 Deuda Angela: {format_money(d['deuda_angela'])}\n"
+        f"🟢 Abonos Angela: {format_money(d['abonos_angela'])}\n"
+        f"Total: {format_money(tot_angela_val)} {tag_angela}"
     )
     bot.send_message(message.chat.id, msg)
+
 
 @bot.message_handler(commands=['historial'])
 def show_history(message):

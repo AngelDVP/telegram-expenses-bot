@@ -103,7 +103,7 @@ def get_balance():
     row = cursor.fetchone()
     total_debt = row['total_debt'] if row and row['total_debt'] is not None else 0.0
     
-    cursor.execute("SELECT SUM(debt_amount) as total_gastos FROM transactions WHERE type = 'gasto'")
+    cursor.execute("SELECT SUM(debt_amount) as total_gastos FROM transactions WHERE type IN ('gasto', 'saldo_inicial')")
     g_row = cursor.fetchone()
     total_gastos = g_row['total_gastos'] if g_row and g_row['total_gastos'] is not None else 0.0
 
@@ -122,6 +122,53 @@ def get_balance():
         'total_gastos_deuda': total_gastos,
         'total_angela_deuda': abs(total_angela),
         'total_abonos': total_abonos
+    }
+
+def get_detailed_balance():
+    init_db()
+    conn = get_connection()
+    cursor = conn.cursor()
+    owner_id_str = get_setting('owner_id')
+    owner_id = int(owner_id_str) if owner_id_str else None
+
+    # Deuda Angel: Sum of (amount * pct) for purchases paid by Angela (type = 'gasto_angela')
+    cursor.execute("SELECT SUM(ABS(debt_amount)) as val FROM transactions WHERE type = 'gasto_angela'")
+    r = cursor.fetchone()
+    deuda_angel = r['val'] if r and r['val'] is not None else 0.0
+
+    # Abonos Angel: Sum of abonos made by Angel (type = 'abono' AND user_id == owner_id)
+    if owner_id:
+        cursor.execute("SELECT SUM(ABS(debt_amount)) as val FROM transactions WHERE type = 'abono' AND user_id = ?", (owner_id,))
+    else:
+        cursor.execute("SELECT 0.0 as val")
+    r = cursor.fetchone()
+    abonos_angel = r['val'] if r and r['val'] is not None else 0.0
+
+    # Deuda Angela: Sum of debt_amount for purchases paid by Angel (type IN ('gasto', 'saldo_inicial'))
+    cursor.execute("SELECT SUM(debt_amount) as val FROM transactions WHERE type IN ('gasto', 'saldo_inicial')")
+    r = cursor.fetchone()
+    deuda_angela = r['val'] if r and r['val'] is not None else 0.0
+
+    # Abonos Angela: Sum of abonos made by Angela (type = 'abono' AND (user_id != owner_id OR user_id IS NULL))
+    if owner_id:
+        cursor.execute("SELECT SUM(ABS(debt_amount)) as val FROM transactions WHERE type = 'abono' AND (user_id != ? OR user_id IS NULL)", (owner_id,))
+    else:
+        cursor.execute("SELECT SUM(ABS(debt_amount)) as val FROM transactions WHERE type = 'abono'")
+    r = cursor.fetchone()
+    abonos_angela = r['val'] if r and r['val'] is not None else 0.0
+
+    total_angel_num = abonos_angel - deuda_angel
+    total_angela_num = abonos_angela - deuda_angela
+
+    conn.close()
+
+    return {
+        'deuda_angel': deuda_angel,
+        'abonos_angel': abonos_angel,
+        'total_angel_num': total_angel_num,
+        'deuda_angela': deuda_angela,
+        'abonos_angela': abonos_angela,
+        'total_angela_num': total_angela_num
     }
 
 def get_recent_transactions(limit=10):
