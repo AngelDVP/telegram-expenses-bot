@@ -1,5 +1,7 @@
 import os
 import re
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
 from dotenv import load_dotenv
 import database as db
@@ -12,6 +14,29 @@ bot = telebot.TeleBot(TOKEN, parse_mode='Markdown')
 
 # Initialize DB
 db.init_db()
+
+# Lightweight HTTP Health Check Server for Render Free Tier ($0/month)
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write(b"OK - Bot Telegram Yiyipipo is running 24/7!")
+    
+    def log_message(self, format, *args):
+        pass # Silence HTTP logs
+
+def start_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    try:
+        server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+        print(f"Health check server listening on port {port}")
+        server.serve_forever()
+    except Exception as e:
+        print(f"Health server error: {e}")
+
+# Run health server in background thread for Render
+threading.Thread(target=start_health_server, daemon=True).start()
 
 def format_money(val):
     return f"${int(round(val)):,}".replace(",", ".")
@@ -82,7 +107,7 @@ def show_history(message):
             
         lines.append(f"• *#{t_id}* | {tag}: *{t['description']}* - `{format_money(t['amount'])}`{pct_str} -> Impacto saldo: `{format_money(t['debt_amount'])}`")
     
-    lines.append("\n💡 _Para borrar una transacción usa: `/borrar <ID>` (ejemplo: `/borrar 5`)_")
+    lines.append("\n💡 _Para borrar una transacción usa: `/borrar ID` (ejemplo: `/borrar 5`)_")
     bot.reply_to(message, "\n".join(lines))
 
 @bot.message_handler(commands=['undo'])
