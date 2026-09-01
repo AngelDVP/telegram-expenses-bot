@@ -1,5 +1,6 @@
 import os
 import re
+import html
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
@@ -10,7 +11,7 @@ load_dotenv()
 
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8616750364:AAEOr-8exqfgoAX5-dMmP2Kp7ZZOB4P9ZmE')
 
-bot = telebot.TeleBot(TOKEN, parse_mode='Markdown')
+bot = telebot.TeleBot(TOKEN, parse_mode='HTML')
 
 # Register Telegram Command Menu (/ayua instead of /ayuda)
 try:
@@ -68,20 +69,20 @@ def ensure_owner(user_id):
 def send_welcome(message):
     ensure_owner(message.from_user.id)
     welcome_text = (
-        "👋 *¡Hola! Soy tu Asistente de Gastos Compartidos (Angel & Angela).*\n\n"
+        "👋 <b>¡Hola! Soy tu Asistente de Gastos Compartidos (Angel & Angela).</b>\n\n"
         "Identifico automáticamente quién escribe en el chat para registrar el gasto correctamente.\n\n"
-        "📌 *¿Cómo registrar un gasto?*\n"
-        "• Escribe el concepto y el monto: `super 45000` o `luz 30000` (por defecto 50%).\n"
+        "📌 <b>¿Cómo registrar un gasto?</b>\n"
+        "• Escribe el concepto y el monto: <code>super 45000</code> o <code>luz 30000</code> (por defecto 50%).\n"
         "• El bot detecta si escribes tú o Angela y asigna a quién le corresponde.\n"
-        "• Si es 100% de la otra persona: `plancha 40000 100%`.\n\n"
-        "📌 *¿Cómo registrar un abono / transferencia?*\n"
-        "• Escribe: `abono 50000` o `me pagó 30000`.\n\n"
-        "⚙️ *Comandos disponibles:*\n"
+        "• Si es 100% de la otra persona: <code>plancha 40000 100%</code>.\n\n"
+        "📌 <b>¿Cómo registrar un abono / transferencia?</b>\n"
+        "• Escribe: <code>abono 50000</code> o <code>me pagó 30000</code>.\n\n"
+        "⚙️ <b>Comandos disponibles:</b>\n"
         "• /saldo - Ver el saldo acumulado en tiempo real.\n"
         "• /wsp - Genera el resumen genérico listo para copiar a WhatsApp.\n"
         "• /historial - Lista los últimos movimientos.\n"
         "• /excel - Exporta y descarga el reporte en formato Excel/CSV.\n"
-        "• /borrar - Elimina el último movimiento (o `/borrar ID` para uno específico).\n"
+        "• /borrar - Elimina el último movimiento (o <code>/borrar ID</code> para uno específico).\n"
         "• /limpiar - Limpia la pantalla borrando los últimos mensajes del chat.\n"
         "• /reiniciar - Borra todas las transacciones y vuelve la cuenta a $0.\n"
         "• /ayua - Muestra este menú de instrucciones."
@@ -121,9 +122,6 @@ def send_whatsapp_summary(message):
     tot_angela_val = abs(d['total_angela_num'])
     tag_angela = "abono" if d['total_angela_num'] >= 0 else "deuda"
 
-    # Net balance calculation between the two
-    # Angela owes Angel: deuda_angela - abonos_angela
-    # Angel owes Angela: deuda_angel - abonos_angel
     net = (d['deuda_angela'] - d['abonos_angela']) - (d['deuda_angel'] - d['abonos_angel'])
 
     if net > 0:
@@ -145,7 +143,7 @@ def send_whatsapp_summary(message):
         f"{net_str}"
     )
 
-    msg = f"```\n{wsp_text}\n```"
+    msg = f"<pre>{html.escape(wsp_text)}</pre>"
     bot.send_message(message.chat.id, msg)
 
 @bot.message_handler(commands=['historial'])
@@ -156,7 +154,7 @@ def show_history(message):
         bot.send_message(message.chat.id, "📜 No hay movimientos registrados aún.")
         return
     
-    lines = ["📜 *ÚLTIMOS 10 MOVIMIENTOS:*\n"]
+    lines = ["📜 <b>ÚLTIMOS 10 MOVIMIENTOS:</b>\n"]
     for t in txs:
         t_type = t['type']
         t_id = t['id']
@@ -171,9 +169,10 @@ def show_history(message):
         else:
             tag = "⚙️ Saldo inicial"
             
-        lines.append(f"• *#{t_id}* | {tag}: *{t['description']}* - `{format_money(t['amount'])}`{pct_str} -> Impacto saldo: `{format_money(t['debt_amount'])}`")
+        desc_clean = html.escape(t['description'])
+        lines.append(f"• <b>#{t_id}</b> | {tag}: <b>{desc_clean}</b> - <code>{format_money(t['amount'])}</code>{pct_str} -> Impacto saldo: <code>{format_money(t['debt_amount'])}</code>")
     
-    lines.append("\n💡 _Para borrar el último gasto escribe `/borrar` (o `/borrar ID` para uno específico)_")
+    lines.append("\n💡 <i>Para borrar el último gasto escribe /borrar (o /borrar ID para uno específico)</i>")
     bot.send_message(message.chat.id, "\n".join(lines))
 
 @bot.message_handler(commands=['borrar', 'undo'])
@@ -185,7 +184,8 @@ def delete_handler(message):
         deleted = db.delete_last_transaction()
         if deleted:
             b = db.get_balance()
-            bot.send_message(message.chat.id, f"🗑️ *Última transacción (#{deleted['id']}) borrada:* '{deleted['description']}' por `{format_money(deleted['amount'])}`.\n\n💰 *Nuevo saldo:* `{format_money(b['total_debt'])}`")
+            desc_clean = html.escape(deleted['description'])
+            bot.send_message(message.chat.id, f"🗑️ <b>Última transacción (#{deleted['id']}) borrada:</b> '{desc_clean}' por <code>{format_money(deleted['amount'])}</code>.\n\n💰 <b>Nuevo saldo:</b> <code>{format_money(b['total_debt'])}</code>")
         else:
             bot.send_message(message.chat.id, "❌ No hay transacciones para borrar.")
         return
@@ -195,11 +195,12 @@ def delete_handler(message):
         deleted = db.delete_transaction(t_id)
         if deleted:
             b = db.get_balance()
-            bot.send_message(message.chat.id, f"🗑️ *Transacción #{deleted['id']} borrada:* '{deleted['description']}'.\n\n💰 *Nuevo saldo:* `{format_money(b['total_debt'])}`")
+            desc_clean = html.escape(deleted['description'])
+            bot.send_message(message.chat.id, f"🗑️ <b>Transacción #{deleted['id']} borrada:</b> '{desc_clean}'.\n\n💰 <b>Nuevo saldo:</b> <code>{format_money(b['total_debt'])}</code>")
         else:
             bot.send_message(message.chat.id, f"❌ No se encontró ninguna transacción con el ID #{t_id}.")
     else:
-        bot.send_message(message.chat.id, "⚠️ Usa `/borrar` para borrar el último registro, o `/borrar ID` (ejemplo: `/borrar 5`).")
+        bot.send_message(message.chat.id, "⚠️ Usa <code>/borrar</code> para borrar el último registro, o <code>/borrar ID</code> (ejemplo: <code>/borrar 5</code>).")
 
 @bot.message_handler(commands=['limpiar_chat', 'limpiar'])
 def clear_chat_history(message):
@@ -215,20 +216,20 @@ def clear_chat_history(message):
         except Exception:
             pass
             
-    bot.send_message(chat_id, "✨ *Historial del chat limpiado.*")
+    bot.send_message(chat_id, "✨ <b>Historial del chat limpiado.</b>")
 
 @bot.message_handler(commands=['reiniciar', 'reset'])
 def reset_handler(message):
     ensure_owner(message.from_user.id)
     db.reset_all_data()
-    bot.send_message(message.chat.id, "🧹 *¡Todos los datos han sido reiniciados a $0 con éxito!* La cuenta está limpia para comenzar de nuevo.")
+    bot.send_message(message.chat.id, "🧹 <b>¡Todos los datos han sido reiniciados a $0 con éxito!</b> La cuenta está limpia para comenzar de nuevo.")
 
 @bot.message_handler(commands=['excel', 'exportar', 'csv'])
 def export_excel_handler(message):
     ensure_owner(message.from_user.id)
     filepath = db.export_to_csv()
     if os.path.exists(filepath):
-        bot.send_message(message.chat.id, "📊 *Aquí tienes la planilla Excel con todos los movimientos ordenados:*")
+        bot.send_message(message.chat.id, "📊 <b>Aquí tienes la planilla Excel con todos los movimientos ordenados:</b>")
         with open(filepath, 'rb') as f:
             bot.send_document(message.chat.id, f)
     else:
@@ -243,9 +244,9 @@ def set_initial_balance(message):
         amount = float(match.group(0))
         tx = db.add_transaction("Saldo Inicial Acumulado", amount, pct=1.0, trans_type='saldo_inicial', user_id=message.from_user.id)
         b = db.get_balance()
-        bot.send_message(message.chat.id, f"✅ *Saldo inicial registrado:* `{format_money(amount)}`.\n\n💰 *Saldo actual:* `{format_money(b['total_debt'])}`")
+        bot.send_message(message.chat.id, f"✅ <b>Saldo inicial registrado:</b> <code>{format_money(amount)}</code>.\n\n💰 <b>Saldo actual:</b> <code>{format_money(b['total_debt'])}</code>")
     else:
-        bot.send_message(message.chat.id, "⚠️ Indica el monto. Ejemplo: `/saldo_inicial 659308`")
+        bot.send_message(message.chat.id, "⚠️ Indica el monto. Ejemplo: <code>/saldo_inicial 659308</code>")
 
 @bot.message_handler(func=lambda msg: True)
 def process_text_message(message):
@@ -269,7 +270,7 @@ def process_text_message(message):
             amount = float(raw_amt)
             tx = db.add_transaction("Abono de Angela", amount, pct=1.0, trans_type='abono', user_id=user_id)
             b = db.get_balance()
-            bot.send_message(message.chat.id, f"💵 *Abono registrado:* `{format_money(amount)}`.\n\n💰 *Nuevo saldo que Angela te debe:* `{format_money(b['total_debt'])}`")
+            bot.send_message(message.chat.id, f"💵 <b>Abono registrado:</b> <code>{format_money(amount)}</code>.\n\n💰 <b>Nuevo saldo que Angela te debe:</b> <code>{format_money(b['total_debt'])}</code>")
             return
 
     # Force Angela paid if explicitly specified by keyword 'ange' or 'angela'
@@ -288,19 +289,20 @@ def process_text_message(message):
             tx = db.add_transaction(clean_desc.capitalize(), amount, pct=pct, trans_type='gasto_angela', user_id=user_id)
             b = db.get_balance()
             pct_str = " (100% tu deuda)" if pct == 1.0 else " (50% tu parte)"
-            bot.send_message(message.chat.id, f"🔴 *Gasto de Angela registrado:* '{clean_desc.capitalize()}' por `{format_money(amount)}`{pct_str}.\n\n💰 *Nuevo saldo que Angela te debe:* `{format_money(b['total_debt'])}`")
+            desc_clean = html.escape(clean_desc.capitalize())
+            bot.send_message(message.chat.id, f"🔴 <b>Gasto de Angela registrado:</b> '{desc_clean}' por <code>{format_money(amount)}</code>{pct_str}.\n\n💰 <b>Nuevo saldo que Angela te debe:</b> <code>{format_money(b['total_debt'])}</code>")
         else:
             # Paid by Owner (Angel)
             tx = db.add_transaction(clean_desc.capitalize(), amount, pct=pct, trans_type='gasto', user_id=user_id)
             b = db.get_balance()
             pct_str = " (100% Angela)" if pct == 1.0 else " (50% Angela)"
-            bot.send_message(message.chat.id, f"🟢 *Gasto registrado:* '{clean_desc.capitalize()}' por `{format_money(amount)}`{pct_str}.\n💡 *Angela aporta:* `{format_money(tx['debt_amount'])}`.\n\n💰 *Nuevo saldo que Angela te debe:* `{format_money(b['total_debt'])}`")
+            desc_clean = html.escape(clean_desc.capitalize())
+            bot.send_message(message.chat.id, f"🟢 <b>Gasto registrado:</b> '{desc_clean}' por <code>{format_money(amount)}</code>{pct_str}.\n💡 <b>Angela aporta:</b> <code>{format_money(tx['debt_amount'])}</code>.\n\n💰 <b>Nuevo saldo que Angela te debe:</b> <code>{format_money(b['total_debt'])}</code>")
         return
 
     # If in private chat and didn't understand number, send help line
     if message.chat.type == 'private':
-        bot.send_message(message.chat.id, "💡 *No entendí la cifra.* Para registrar un gasto escribe el nombre y el monto (ejemplo: `super 45000` o `abono 20000`).\n\nUsa /ayua para ver las instrucciones.")
-
+        bot.send_message(message.chat.id, "💡 <b>No entendí la cifra.</b> Para registrar un gasto escribe el nombre y el monto (ejemplo: <code>super 45000</code> o <code>abono 20000</code>).\n\nUsa /ayua para ver las instrucciones.")
 
 if __name__ == '__main__':
     print("Bot de Cuentas Iniciado y Escuchando en Telegram...")
