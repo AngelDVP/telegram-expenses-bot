@@ -12,6 +12,21 @@ TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8616750364:AAEOr-8exqfgoAX5-dMmP2Kp7ZZO
 
 bot = telebot.TeleBot(TOKEN, parse_mode='Markdown')
 
+# Register Telegram Command Menu so typing '/' shows all commands in Telegram UI
+try:
+    bot.set_my_commands([
+        telebot.types.BotCommand("saldo", "Ver saldo acumulado en tiempo real"),
+        telebot.types.BotCommand("wsp", "Generar mensaje para WhatsApp"),
+        telebot.types.BotCommand("historial", "Ver últimos 10 movimientos"),
+        telebot.types.BotCommand("excel", "Descargar reporte en Excel"),
+        telebot.types.BotCommand("borrar", "Borrar último gasto (o /borrar ID)"),
+        telebot.types.BotCommand("limpiar", "Limpiar pantalla del chat"),
+        telebot.types.BotCommand("ayuda", "Ver menú de instrucciones"),
+        telebot.types.BotCommand("reiniciar", "Reiniciar todo a $0")
+    ])
+except Exception as e:
+    print(f"Set commands error: {e}")
+
 # Initialize DB
 db.init_db()
 
@@ -49,7 +64,7 @@ def ensure_owner(user_id):
     return int(owner)
 
 @bot.message_handler(commands=['start', 'help', 'ayuda'])
-@bot.message_handler(func=lambda msg: msg.text and msg.text.strip().lower() in ['ayuda', '/ayuda', 'help', '/help'])
+@bot.message_handler(func=lambda msg: msg.text and any(cmd in msg.text.lower() for cmd in ['ayuda', 'help', 'start']))
 def send_welcome(message):
     ensure_owner(message.from_user.id)
     welcome_text = (
@@ -69,7 +84,6 @@ def send_welcome(message):
         "• /borrar - Elimina el último movimiento (o `/borrar ID` para uno específico).\n"
         "• /limpiar - Limpia la pantalla borrando los últimos mensajes del chat.\n"
         "• /reiniciar - Borra todas las transacciones y vuelve la cuenta a $0.\n"
-
         "• /saldo_inicial - Ajusta el saldo inicial acumulado (ejemplo: `/saldo_inicial 659308`).\n"
         "• /ayuda - Muestra este menú de instrucciones."
     )
@@ -156,7 +170,6 @@ def clear_chat_history(message):
     chat_id = message.chat.id
     current_msg_id = message.message_id
     
-    # Attempt to delete recent messages
     deleted_count = 0
     for msg_id in range(current_msg_id, max(1, current_msg_id - 100), -1):
         try:
@@ -169,7 +182,6 @@ def clear_chat_history(message):
 
 @bot.message_handler(commands=['reiniciar', 'reset'])
 def reset_handler(message):
-
     ensure_owner(message.from_user.id)
     db.reset_all_data()
     bot.send_message(message.chat.id, "🧹 *¡Todos los datos han sido reiniciados a $0 con éxito!* La cuenta está limpia para comenzar de nuevo.")
