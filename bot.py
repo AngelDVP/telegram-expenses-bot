@@ -12,16 +12,16 @@ TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '8616750364:AAEOr-8exqfgoAX5-dMmP2Kp7ZZO
 
 bot = telebot.TeleBot(TOKEN, parse_mode='Markdown')
 
-# Register Telegram Command Menu so typing '/' shows all commands in Telegram UI
+# Register Telegram Command Menu (/ayua instead of /ayuda)
 try:
     bot.set_my_commands([
-        telebot.types.BotCommand("saldo", "Ver saldo acumulado en tiempo real"),
-        telebot.types.BotCommand("wsp", "Generar mensaje para WhatsApp"),
+        telebot.types.BotCommand("saldo", "Ver saldo acumulado"),
+        telebot.types.BotCommand("wsp", "Mensaje listo para WhatsApp"),
         telebot.types.BotCommand("historial", "Ver últimos 10 movimientos"),
         telebot.types.BotCommand("excel", "Descargar reporte en Excel"),
-        telebot.types.BotCommand("borrar", "Borrar último gasto (o /borrar ID)"),
+        telebot.types.BotCommand("borrar", "Borrar último gasto o por ID"),
         telebot.types.BotCommand("limpiar", "Limpiar pantalla del chat"),
-        telebot.types.BotCommand("ayuda", "Ver menú de instrucciones"),
+        telebot.types.BotCommand("ayua", "Ver instrucciones y ayuda"),
         telebot.types.BotCommand("reiniciar", "Reiniciar todo a $0")
     ])
 except Exception as e:
@@ -63,12 +63,12 @@ def ensure_owner(user_id):
         return user_id
     return int(owner)
 
-@bot.message_handler(commands=['start', 'help', 'ayuda'])
-@bot.message_handler(func=lambda msg: msg.text and any(cmd in msg.text.lower() for cmd in ['ayuda', 'help', 'start']))
+@bot.message_handler(commands=['start', 'help', 'ayua', 'ayuda'])
+@bot.message_handler(func=lambda msg: msg.text and any(cmd in msg.text.lower() for cmd in ['ayua', 'ayuda', 'help', 'start']))
 def send_welcome(message):
     ensure_owner(message.from_user.id)
     welcome_text = (
-        "👋 *¡Hola! Soy tu Asistente de Gastos Compartidos con Angela.*\n\n"
+        "👋 *¡Hola! Soy tu Asistente de Gastos Compartidos (Angel & Angela).*\n\n"
         "Identifico automáticamente quién escribe en el chat para registrar el gasto correctamente.\n\n"
         "📌 *¿Cómo registrar un gasto?*\n"
         "• Escribe el concepto y el monto: `super 45000` o `luz 30000` (por defecto 50%).\n"
@@ -77,15 +77,14 @@ def send_welcome(message):
         "📌 *¿Cómo registrar un abono / transferencia?*\n"
         "• Escribe: `abono 50000` o `me pagó 30000`.\n\n"
         "⚙️ *Comandos disponibles:*\n"
-        "• /saldo (o /balance) - Ver el saldo acumulado en tiempo real.\n"
+        "• /saldo - Ver el saldo acumulado en tiempo real.\n"
+        "• /wsp - Genera el resumen genérico listo para copiar a WhatsApp.\n"
         "• /historial - Lista los últimos movimientos.\n"
-        "• /wsp - Genera el texto limpio para copiar y enviar por WhatsApp.\n"
         "• /excel - Exporta y descarga el reporte en formato Excel/CSV.\n"
         "• /borrar - Elimina el último movimiento (o `/borrar ID` para uno específico).\n"
         "• /limpiar - Limpia la pantalla borrando los últimos mensajes del chat.\n"
         "• /reiniciar - Borra todas las transacciones y vuelve la cuenta a $0.\n"
-        "• /saldo_inicial - Ajusta el saldo inicial acumulado (ejemplo: `/saldo_inicial 659308`).\n"
-        "• /ayuda - Muestra este menú de instrucciones."
+        "• /ayua - Muestra este menú de instrucciones."
     )
     bot.send_message(message.chat.id, welcome_text)
 
@@ -111,6 +110,43 @@ def show_balance(message):
     )
     bot.send_message(message.chat.id, msg)
 
+@bot.message_handler(commands=['wsp', 'whatsapp'])
+def send_whatsapp_summary(message):
+    ensure_owner(message.from_user.id)
+    d = db.get_detailed_balance()
+    
+    tot_angel_val = abs(d['total_angel_num'])
+    tag_angel = "abono" if d['total_angel_num'] >= 0 else "deuda"
+    
+    tot_angela_val = abs(d['total_angela_num'])
+    tag_angela = "abono" if d['total_angela_num'] >= 0 else "deuda"
+
+    # Net balance calculation between the two
+    # Angela owes Angel: deuda_angela - abonos_angela
+    # Angel owes Angela: deuda_angel - abonos_angel
+    net = (d['deuda_angela'] - d['abonos_angela']) - (d['deuda_angel'] - d['abonos_angel'])
+
+    if net > 0:
+        net_str = f"👉 BALANCE NETO: Angela debe {format_money(net)} a Angel"
+    elif net < 0:
+        net_str = f"👉 BALANCE NETO: Angel debe {format_money(abs(net))} a Angela"
+    else:
+        net_str = "👉 BALANCE NETO: Cuentas al día ($0)"
+
+    wsp_text = (
+        "📊 RESUMEN DE CUENTAS\n\n"
+        f"🔴 Deuda Angel: {format_money(d['deuda_angel'])}\n"
+        f"🟢 Abonos Angel: {format_money(d['abonos_angel'])}\n"
+        f"Total: {format_money(tot_angel_val)} {tag_angel}\n"
+        "----------------------------\n"
+        f"🔴 Deuda Angela: {format_money(d['deuda_angela'])}\n"
+        f"🟢 Abonos Angela: {format_money(d['abonos_angela'])}\n"
+        f"Total: {format_money(tot_angela_val)} {tag_angela}\n\n"
+        f"{net_str}"
+    )
+
+    msg = f"```\n{wsp_text}\n```"
+    bot.send_message(message.chat.id, msg)
 
 @bot.message_handler(commands=['historial'])
 def show_history(message):
@@ -211,29 +247,6 @@ def set_initial_balance(message):
     else:
         bot.send_message(message.chat.id, "⚠️ Indica el monto. Ejemplo: `/saldo_inicial 659308`")
 
-@bot.message_handler(commands=['wsp', 'whatsapp'])
-def send_whatsapp_summary(message):
-    ensure_owner(message.from_user.id)
-    b = db.get_balance()
-    total = b['total_debt']
-    
-    if total >= 0:
-        wsp_text = (
-            f"Hola Angela! Te comparto el resumen actualizado de cuentas:\n\n"
-            f"• Gastos tuyos / compartidos acumulados: {format_money(b['total_gastos_deuda'])}\n"
-            f"• Descuento por gastos pagados por ti: -{format_money(b['total_angela_deuda'])}\n"
-            f"• Abonos realizados: -{format_money(b['total_abonos'])}\n\n"
-            f"👉 TOTAL PENDIENTE A TRANSFERIR: {format_money(total)}"
-        )
-    else:
-        wsp_text = (
-            f"Hola Angela! Revisé las cuentas acumuladas:\n\n"
-            f"👉 Saldo a tu favor: {format_money(abs(total))}"
-        )
-
-    msg = f"```\n{wsp_text}\n```"
-    bot.send_message(message.chat.id, msg)
-
 @bot.message_handler(func=lambda msg: True)
 def process_text_message(message):
     text = message.text.strip().lower()
@@ -281,7 +294,7 @@ def process_text_message(message):
             bot.send_message(message.chat.id, f"🟢 *Gasto registrado:* '{clean_desc.capitalize()}' por `{format_money(amount)}`{pct_str}.\n💡 *Angela aporta:* `{format_money(tx['debt_amount'])}`.\n\n💰 *Nuevo saldo que Angela te debe:* `{format_money(b['total_debt'])}`")
         return
 
-    bot.send_message(message.chat.id, "💡 *No entendí la cifra.* Para registrar un gasto escribe el nombre y el monto (ejemplo: `super 45000` o `abono 20000`).\n\nUsa /ayuda para ver las instrucciones.")
+    bot.send_message(message.chat.id, "💡 *No entendí la cifra.* Para registrar un gasto escribe el nombre y el monto (ejemplo: `super 45000` o `abono 20000`).\n\nUsa /ayua para ver las instrucciones.")
 
 if __name__ == '__main__':
     print("Bot de Cuentas Iniciado y Escuchando en Telegram...")
